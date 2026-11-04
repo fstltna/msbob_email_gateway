@@ -1,0 +1,18 @@
+system windows_dll initglobal
+option quiet
+option map=umlmm.map
+option modname=UMLMM
+option description 'UMLMM SMTP gateway for Bob'
+option oneautodata
+import WS_STARTUP WINSOCK.115
+import WS_CLEANUP WINSOCK.116
+import WS_SOCKET WINSOCK.23
+import WS_CONNECT WINSOCK.4
+import WS_SEND WINSOCK.19
+import WS_RECV WINSOCK.16
+import WS_CLOSE WINSOCK.3
+import WS_SELECT WINSOCK.18
+import WS_GETHOST WINSOCK.52
+import WS_GETERR WINSOCK.111
+file umlmm.obj
+name UMLMM.DLL

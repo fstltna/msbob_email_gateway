@@ -1,0 +1,172 @@
+Open Watcom Linker Version 1.9
+Portions Copyright (c) 1985-2002 Sybase, Inc. All Rights Reserved.
+Created on:       26/11/03 16:26:35
+Executable Image: UMLMM.DLL
+creating a Windows 16-bit dynamic link library
+
+
+                        +------------+
+                        |   Groups   |
+                        +------------+
+
+Group                           Address              Size
+=====                           =======              ====
+
+DGROUP                          0002:0000            00006cf6
+
+
+
+                        +--------------+
+                        |   Segments   |
+                        +--------------+
+
+Segment                Class          Group          Address         Size
+=======                =====          =====          =======         ====
+
+_TEXT                  CODE           AUTO           0001:0000       0000018a
+umlmm_TEXT             CODE           AUTO           0001:018a       0000501f
+FAR_DATA               FAR_DATA       AUTO           0002:0000       00000000
+_NULL                  BEGDATA        DGROUP         0002:0000       00000010
+_DATA                  DATA           DGROUP         0002:0010       00000316
+XIB                    DATA           DGROUP         0002:0326       00000000
+XI                     DATA           DGROUP         0002:0326       00000000
+XIE                    DATA           DGROUP         0002:0326       00000000
+YIB                    DATA           DGROUP         0002:0326       00000000
+YI                     DATA           DGROUP         0002:0326       00000000
+YIE                    DATA           DGROUP         0002:0326       00000000
+DATA                   DATA           DGROUP         0002:0326       00000000
+CONST                  DATA           DGROUP         0002:0326       00000c32
+STRINGS                DATA           DGROUP         0002:0f58       00000000
+CONST2                 DATA           DGROUP         0002:0f58       0000006a
+_BSS                   BSS            DGROUP         0002:0fc2       00005d34
+
+
+                        +----------------+
+                        |   Memory Map   |
+                        +----------------+
+
+* = unreferenced symbol
++ = symbol only referenced locally
+
+Address        Symbol
+=======        ======
+
+Module: C:\WATCOM/lib286/win\libentry.obj(C:\OW\ow_release\1.0\bld\clib\startup\a\libentry.asm)
+0000:0006*     pLocalHeap
+0000:0008*     pAtomTable
+0000:000a*     pStackTop
+0000:000c*     pStackMin
+0000:000e*     pStackBot
+0002:0000*     __nullarea
+0002:0012*     __curbrk
+0002:0014*     __psp
+0002:0016*     __osmajor
+0002:0017*     __osminor
+0002:0018*     __osmode
+0002:000a*     __STACKLOW
+0002:000c*     __STACKTOP
+0002:001a*     __cbyte
+0002:001c*     __child
+0002:001e*     __no87
+0002:0019*     __HShift
+0002:0020*     __get_ovl_stack
+0002:0024*     __restore_ovl_stack
+0002:0028*     ___FPE_handler
+0002:002c*     __LpCmdLine
+0000:0000*     _large_code_
+0001:0000*     LibEntry
+0001:0000      __DLLstart_
+0001:005a*     __exit_
+0001:0073      __GETDS
+Module: umlmm.obj(C:\Documents and Settings\Marisa\Desktop\bobmailer\umlmm.c)
+0001:4db6+     MMOPENSESSION
+0001:4e1d+     MMCLOSESESSION
+0001:4e38+     MMSETLOGFILE
+0001:4f0b+     MMSETMETER
+0001:4f0b+     MMCONFIGUREHANDLING
+0001:4f0b+     MMCONFIGUREMAIL
+0001:4f0b+     MMLOGIN
+0001:4f18+     MMSETSERVICE
+0001:4f18+     MMCONFIGUREACCOUNT
+0001:4f18+     MMCONFIGURETRANSCRIPT
+0001:4f2b+     MMCONFIGUREBOXES
+0001:4f2b+     MMCONFIGURECONNECT
+0001:4f3e+     MMCONFIGUREMCD
+0001:4f51+     MMCONFIGUREMODEM
+0001:4f64+     MMCONFIGUREPORT
+0001:4f77+     MMCONNECT
+0001:4fc3+     MMDISCONNECT
+0001:4ff1+     MMDOWNLOADMESSAGE
+0001:5068+     MMUPLOADENVELOPE
+0001:50ba+     MMUPLOADTEXT
+0001:5118+     MMUPLOADATTACHMENT
+0001:514c+     MMUPLOADSEND
+0001:516d+     MMUPLOADABORT
+0001:5183      LIBMAIN
+0001:5196+     WEP
+Module: C:\WATCOM/lib286/win\clibl.lib(wallflgs.c)
+0002:031e      ___win_alloc_flags
+0002:0322      ___win_realloc_flags
+Module: C:\WATCOM/lib286/win\clibl.lib(initrtns.c)
+0001:00b1      __FInitRtns
+0001:00bc+     __InitRtns
+0001:011a      __FFiniRtns
+0001:0125+     __FiniRtns
+Module: C:\WATCOM/lib286/win\clibl.lib(cmodel)
+0001:018a      _big_code_
+0001:018a*     CodeModelMismatch
+Module: C:\WATCOM/lib286/win\clibl.lib(sgdef086)
+0002:0326      __Start_XI
+0002:0326      __End_XI
+0002:0326      __Start_YI
+0002:0326      __End_YI
+
+
+                        +----------------------+
+                        |   Imported Symbols   |
+                        +----------------------+
+
+Symbol                              Module
+======                              ======
+
+WS_STARTUP                          WINSOCK
+WS_CLEANUP                          WINSOCK
+WS_SOCKET                           WINSOCK
+WS_CONNECT                          WINSOCK
+WS_SEND                             WINSOCK
+WS_RECV                             WINSOCK
+WS_CLOSE                            WINSOCK
+WS_SELECT                           WINSOCK
+WS_GETHOST                          WINSOCK
+WS_GETERR                           WINSOCK
+__AHSHIFT                           KERNEL
+LOCALINIT                           KERNEL
+_LOPEN                              KERNEL
+_LCREAT                             KERNEL
+_LLSEEK                             KERNEL
+_LWRITE                             KERNEL
+_LCLOSE                             KERNEL
+_LREAD                              KERNEL
+GETPRIVATEPROFILESTRING             KERNEL
+GETPRIVATEPROFILEINT                KERNEL
+GETTICKCOUNT                        USER
+OPENFILE                            KERNEL
+ISBADREADPTR                        KERNEL
+ISBADWRITEPTR                       KERNEL
+
+
+                        +--------------------+
+                        |   Libraries Used   |
+                        +--------------------+
+
+C:\WATCOM/lib286/win\windows.lib
+C:\WATCOM/lib286/win\clibl.lib
+
+
+                        +-----------------------+
+                        |   Linker Statistics   |
+                        +-----------------------+
+
+Stack size:  0000 (0.)
+Memory size:  be9f (48799.)
+Link time: 00:00.00
