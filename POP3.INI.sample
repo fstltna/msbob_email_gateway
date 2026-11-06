@@ -22,11 +22,11 @@ Delete=1
 
 ; 1 = also keep an untouched copy of every downloaded message as
 ; <name>.EML in the MAILROOM folder (default; a safety net while testing).
-KeepRaw=1
+KeepRaw=0
 
 ; Maximum number of messages downloaded per mail run (0 = no limit).  Keeps a
 ; run short; whatever is left on the server is fetched on the next run.
-MaxPerRun=25
+MaxPerRun=50
 
 ; 0 = oldest message first (normal).  1 = newest first: useful while testing
 ; a mailbox with a large backlog, so a brand-new test message comes first.
