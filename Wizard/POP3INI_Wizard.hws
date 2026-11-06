@@ -1,0 +1,1044 @@
+; ============================================================================
+;  POP3.INI Wizard  -  for the UMLMM gateway (Microsoft Bob POP3/SMTP mail)
+;  Hollywood 9.0 or newer + RapaGUI plugin.
+;
+;  Walks through the settings, then writes a commented POP3.INI.
+;  An existing POP3.INI can be loaded, changed and saved again: the comments
+;  are always regenerated, so the file stays easy to read and edit by hand.
+;
+;  NOT TESTED by the author (no Hollywood in the build environment).  If
+;  something misbehaves, send me the error text.  The few places most likely
+;  to need adjusting are marked  ;;CHECK
+; ============================================================================
+
+@REQUIRE "RapaGUI", {Link = True}
+@APPTITLE "POP3.INI Wizard"
+@APPICON {Ic16x16 = "icons/icon16.png", Ic24x24 = "icons/icon24.png", Ic32x32 = "icons/icon32.png", Ic48x48 = "icons/icon48.png", Ic64x64 = "icons/icon64.png", Ic96x96 = "icons/icon96.png", Ic128x128 = "icons/icon128.png", Ic256x256 = "icons/icon256.png"}
+@VERSION 9, 0
+
+; ;;CHECK  If every button click seems to fire twice (press AND release),
+; set this to False (or True, whichever makes it fire once).  -1 = accept all.
+CLICK_TRIGGER = -1
+
+; Shows the id/attribute of every event in the line above the buttons, to help
+; find problems.  Set to False once everything works.
+DEBUG_EVENTS = True
+
+bs$ = Chr(92)
+DEFAULT_PATH$ = "C:" .. bs$ .. "MSBOB" .. bs$ .. "MAILROOM" .. bs$ .. "POP3.INI"
+
+quit = False
+loaded = False
+nusers = 0
+users = {}
+srvExtra = {}
+nSrvExtra = 0
+listCount = 0
+revCount = 0
+editIndex = -1
+
+; ---------------------------------------------------------------------------
+;  String helpers (written with Left/Right only, so they do not depend on
+;  whether Mid() counts from 0 or 1)
+; ---------------------------------------------------------------------------
+Function p_Ch(s$, i)
+    Return(LeftStr(RightStr(s$, StrLen(s$) - i), 1))
+EndFunction
+
+Function p_Lower(s$)
+    Local i, a, r$
+    r$ = ""
+    For i = 0 To StrLen(s$) - 1
+        a = Asc(p_Ch(s$, i))
+        If a >= 65 And a <= 90 Then a = a + 32
+        r$ = r$ .. Chr(a)
+    Next
+    Return(r$)
+EndFunction
+
+Function p_Upper(s$)
+    Local i, a, r$
+    r$ = ""
+    For i = 0 To StrLen(s$) - 1
+        a = Asc(p_Ch(s$, i))
+        If a >= 97 And a <= 122 Then a = a - 32
+        r$ = r$ .. Chr(a)
+    Next
+    Return(r$)
+EndFunction
+
+Function p_Sub(s$, a, b)
+    ; characters a .. b-1 (0-based)
+    If b <= a
+        Return("")
+    EndIf
+    Return(LeftStr(RightStr(s$, StrLen(s$) - a), b - a))
+EndFunction
+
+Function p_Trim(s$)
+    Local a, b, c$
+    a = 0
+    b = StrLen(s$)
+    While a < b
+        c$ = p_Ch(s$, a)
+        If c$ = " " Or c$ = Chr(9) Or c$ = Chr(13) Or c$ = Chr(10)
+            a = a + 1
+        Else
+            Break
+        EndIf
+    Wend
+    While b > a
+        c$ = p_Ch(s$, b - 1)
+        If c$ = " " Or c$ = Chr(9) Or c$ = Chr(13) Or c$ = Chr(10)
+            b = b - 1
+        Else
+            Break
+        EndIf
+    Wend
+    Return(p_Sub(s$, a, b))
+EndFunction
+
+Function p_Find(s$, ch$)
+    Local i
+    For i = 0 To StrLen(s$) - 1
+        If p_Ch(s$, i) = ch$
+            Return(i)
+        EndIf
+    Next
+    Return(-1)
+EndFunction
+
+Function p_FindLast(s$, ch$)
+    Local i
+    For i = StrLen(s$) - 1 To 0 Step -1
+        If p_Ch(s$, i) = ch$
+            Return(i)
+        EndIf
+    Next
+    Return(-1)
+EndFunction
+
+Function p_IsDigits(s$)
+    Local i, a
+    If StrLen(s$) = 0
+        Return(False)
+    EndIf
+    For i = 0 To StrLen(s$) - 1
+        a = Asc(p_Ch(s$, i))
+        If a < 48 Or a > 57
+            Return(False)
+        EndIf
+    Next
+    Return(True)
+EndFunction
+
+Function p_HasSpace(s$)
+    Local i, c$
+    For i = 0 To StrLen(s$) - 1
+        c$ = p_Ch(s$, i)
+        If c$ = " " Or c$ = Chr(9)
+            Return(True)
+        EndIf
+    Next
+    Return(False)
+EndFunction
+
+Function p_Bool(v)
+    If v
+        Return("1")
+    EndIf
+    Return("0")
+EndFunction
+
+; ---------------------------------------------------------------------------
+;  GUI helpers
+; ---------------------------------------------------------------------------
+Function p_Get(id$)
+    Return(p_Trim(moai.Get(id$, "Text")))
+EndFunction
+
+Function p_Put(id$, v$)
+    moai.Set(id$, "Text", v$)
+EndFunction
+
+Function p_Msg(title$, body$)
+    moai.Request(title$, body$, "OK")
+EndFunction
+
+Function p_Status(s$)
+    moai.Set("status", "Text", s$)
+EndFunction
+
+; ---------------------------------------------------------------------------
+;  User table
+; ---------------------------------------------------------------------------
+Function p_NewUser()
+    Local u
+    u = {}
+    u.id = ""
+    u.name = ""
+    u.email = ""
+    u.user = ""
+    u.pass = ""
+    u.smtpUser = ""
+    u.smtpPass = ""
+    u.popUser = ""
+    u.popPass = ""
+    u.extra = {}
+    u.nExtra = 0
+    Return(u)
+EndFunction
+
+Function p_FindUser(id$)
+    Local i
+    For i = 0 To nusers - 1
+        If p_Lower(users[i].id) = p_Lower(id$)
+            Return(i)
+        EndIf
+    Next
+    Return(-1)
+EndFunction
+
+Function p_UserLabel(i)
+    Local l$
+    l$ = users[i].id
+    If users[i].name <> ""
+        l$ = l$ .. "   -   " .. users[i].name
+    EndIf
+    Return(l$)
+EndFunction
+
+Function p_RefreshList()
+    Local i
+    While listCount > 0
+        moai.DoMethod("ulist", "Remove", "Last")
+        listCount = listCount - 1
+    Wend
+    For i = 0 To nusers - 1
+        moai.DoMethod("ulist", "Insert", "Bottom", p_UserLabel(i))
+        listCount = listCount + 1
+    Next
+EndFunction
+
+Function p_ClearForm()
+    p_Put("fId", "")
+    p_Put("fName", "")
+    p_Put("fEmail", "")
+    p_Put("fUser", "")
+    p_Put("fPass", "")
+    p_Put("fSmtpUser", "")
+    p_Put("fSmtpPass", "")
+    p_Put("fPopUser", "")
+    p_Put("fPopPass", "")
+    editIndex = -1
+EndFunction
+
+Function p_LoadForm(i)
+    p_Put("fId", users[i].id)
+    p_Put("fName", users[i].name)
+    p_Put("fEmail", users[i].email)
+    p_Put("fUser", users[i].user)
+    p_Put("fPass", users[i].pass)
+    p_Put("fSmtpUser", users[i].smtpUser)
+    p_Put("fSmtpPass", users[i].smtpPass)
+    p_Put("fPopUser", users[i].popUser)
+    p_Put("fPopPass", users[i].popPass)
+    editIndex = i
+EndFunction
+
+Function p_SaveUserFromForm()
+    ; Adds or updates the user shown in the form.  Returns True on success.
+    Local id$, i, u, em$
+    id$ = p_Get("fId")
+    If id$ = ""
+        p_Msg("User", "The individual ID is empty.  It is the number after the name in the [USERS] list of MAILROOM.INI, for example 218-0241.")
+        Return(False)
+    EndIf
+    If p_HasSpace(id$) Or p_Find(id$, ",") >= 0 Or p_Find(id$, "[") >= 0 Or p_Find(id$, "]") >= 0 Or p_Find(id$, "=") >= 0
+        p_Msg("User", "The ID may not contain spaces, commas, = or square brackets.")
+        Return(False)
+    EndIf
+    em$ = p_Get("fEmail")
+    If p_Find(em$, "@") < 1
+        p_Msg("User", "The e-mail address must look like name@msbob.org.")
+        Return(False)
+    EndIf
+    If p_Get("fUser") = ""
+        p_Msg("User", "The login name for the mail server is empty.")
+        Return(False)
+    EndIf
+    If p_Get("fPass") = ""
+        p_Msg("User", "The password is empty.")
+        Return(False)
+    EndIf
+    i = p_FindUser(id$)
+    If i = -1
+        u = p_NewUser()
+        users[nusers] = u
+        i = nusers
+        nusers = nusers + 1
+    ElseIf i <> editIndex
+        If moai.Request("User", "A user with ID " .. id$ .. " already exists.  Replace it?", "Replace|Cancel") = 0
+            Return(False)
+        EndIf
+    EndIf
+    users[i].id = id$
+    users[i].name = p_Get("fName")
+    users[i].email = em$
+    users[i].user = p_Get("fUser")
+    users[i].pass = p_Get("fPass")
+    users[i].smtpUser = p_Get("fSmtpUser")
+    users[i].smtpPass = p_Get("fSmtpPass")
+    users[i].popUser = p_Get("fPopUser")
+    users[i].popPass = p_Get("fPopPass")
+    editIndex = i
+    p_RefreshList()
+    Return(True)
+EndFunction
+
+Function p_RemoveUser(i)
+    Local k
+    If i < 0 Or i >= nusers
+        Return
+    EndIf
+    For k = i To nusers - 2
+        users[k] = users[k + 1]
+    Next
+    nusers = nusers - 1
+    p_RefreshList()
+    p_ClearForm()
+EndFunction
+
+; ---------------------------------------------------------------------------
+;  Settings <-> GUI
+; ---------------------------------------------------------------------------
+Function p_Defaults()
+    p_Put("sSmtpHost", "msbob.org")
+    p_Put("sSmtpPort", "25")
+    p_Put("sHello", "localhost")
+    p_Put("sPopHost", "msbob.org")
+    p_Put("sPopPort", "110")
+    moai.Set("oDelete", "Selected", True)
+    moai.Set("oKeepRaw", "Selected", False)
+    moai.Set("oNewest", "Selected", False)
+    moai.Set("oShowRcpt", "Selected", True)
+    p_Put("oMax", "50")
+    moai.Set("oDate", "Active", 0)
+    p_Put("oInDir", "")
+EndFunction
+
+Function p_ApplyServerKey(k$, v$)
+    Local kl$
+    kl$ = p_Lower(k$)
+    If kl$ = "smtphost"
+        p_Put("sSmtpHost", v$)
+        Return
+    EndIf
+    If kl$ = "smtpport"
+        p_Put("sSmtpPort", v$)
+        Return
+    EndIf
+    If kl$ = "hello"
+        p_Put("sHello", v$)
+        Return
+    EndIf
+    If kl$ = "pop3host"
+        p_Put("sPopHost", v$)
+        Return
+    EndIf
+    If kl$ = "pop3port"
+        p_Put("sPopPort", v$)
+        Return
+    EndIf
+    If kl$ = "users"
+        Return      ; rebuilt from the user list
+    EndIf
+    If kl$ = "delete"
+        moai.Set("oDelete", "Selected", v$ <> "0")
+        Return
+    EndIf
+    If kl$ = "keepraw"
+        moai.Set("oKeepRaw", "Selected", v$ <> "0")
+        Return
+    EndIf
+    If kl$ = "newestfirst"
+        moai.Set("oNewest", "Selected", v$ <> "0")
+        Return
+    EndIf
+    If kl$ = "showrecipients"
+        moai.Set("oShowRcpt", "Selected", v$ <> "0")
+        Return
+    EndIf
+    If kl$ = "maxperrun"
+        p_Put("oMax", v$)
+        Return
+    EndIf
+    If kl$ = "indir"
+        p_Put("oInDir", v$)
+        Return
+    EndIf
+    If kl$ = "datestyle"
+        If p_Lower(v$) = "mci"
+            moai.Set("oDate", "Active", 1)
+        EndIf
+        If p_Lower(v$) = "rfc"
+            moai.Set("oDate", "Active", 2)
+        EndIf
+        If p_Lower(v$) = "none"
+            moai.Set("oDate", "Active", 0)
+        EndIf
+        Return
+    EndIf
+    ; unknown key: keep it so nothing is lost
+    srvExtra[nSrvExtra] = k$ .. "=" .. v$
+    nSrvExtra = nSrvExtra + 1
+EndFunction
+
+Function p_ApplyUserKey(i, k$, v$)
+    Local kl$
+    kl$ = p_Lower(k$)
+    If kl$ = "email"
+        users[i].email = v$
+        Return
+    EndIf
+    If kl$ = "user"
+        users[i].user = v$
+        Return
+    EndIf
+    If kl$ = "password"
+        users[i].pass = v$
+        Return
+    EndIf
+    If kl$ = "fullname"
+        users[i].name = v$
+        Return
+    EndIf
+    If kl$ = "smtpuser"
+        users[i].smtpUser = v$
+        Return
+    EndIf
+    If kl$ = "smtppassword"
+        users[i].smtpPass = v$
+        Return
+    EndIf
+    If kl$ = "popuser"
+        users[i].popUser = v$
+        Return
+    EndIf
+    If kl$ = "poppassword"
+        users[i].popPass = v$
+        Return
+    EndIf
+    users[i].extra[users[i].nExtra] = k$ .. "=" .. v$
+    users[i].nExtra = users[i].nExtra + 1
+EndFunction
+
+; ---------------------------------------------------------------------------
+;  Reading an existing POP3.INI (comments are ignored)
+; ---------------------------------------------------------------------------
+Function p_LoadIni(path$)
+    Local l$, sect$, p, k$, v$, cur, id$, up$
+    If Exists(path$) = 0
+        Return(False)
+    EndIf
+    p_Defaults()
+    nusers = 0
+    nSrvExtra = 0
+    srvExtra = {}
+    users = {}
+    sect$ = ""
+    cur = -1
+    OpenFile(1, path$, #MODE_READ)
+    While Eof(1) = False
+        l$ = p_Trim(ReadLine(1))
+        If l$ = "" Or LeftStr(l$, 1) = ";"
+            Continue
+        EndIf
+        If LeftStr(l$, 1) = "["
+            sect$ = p_Sub(l$, 1, p_FindLast(l$, "]"))
+            cur = -1
+            up$ = p_Upper(sect$)
+            If LeftStr(up$, 5) = "USER."
+                id$ = p_Sub(sect$, 5, StrLen(sect$))
+                users[nusers] = p_NewUser()
+                users[nusers].id = id$
+                cur = nusers
+                nusers = nusers + 1
+            EndIf
+            Continue
+        EndIf
+        p = p_Find(l$, "=")
+        If p < 1
+            Continue
+        EndIf
+        k$ = p_Trim(p_Sub(l$, 0, p))
+        v$ = p_Trim(p_Sub(l$, p + 1, StrLen(l$)))
+        If p_Upper(sect$) = "SERVER"
+            p_ApplyServerKey(k$, v$)
+        ElseIf cur >= 0
+            p_ApplyUserKey(cur, k$, v$)
+        EndIf
+    Wend
+    CloseFile(1)
+    p_RefreshList()
+    p_ClearForm()
+    Return(True)
+EndFunction
+
+; ---------------------------------------------------------------------------
+;  Importing the user list from MAILROOM.INI:  [USERS]  Name=Full Name,ID
+; ---------------------------------------------------------------------------
+Function p_ImportMailroom(path$)
+    Local l$, inUsers, p, v$, c, id$, nm$, added, i, u
+    If Exists(path$) = 0
+        Return(-1)
+    EndIf
+    inUsers = False
+    added = 0
+    OpenFile(1, path$, #MODE_READ)
+    While Eof(1) = False
+        l$ = p_Trim(ReadLine(1))
+        If l$ = "" Or LeftStr(l$, 1) = ";"
+            Continue
+        EndIf
+        If LeftStr(l$, 1) = "["
+            inUsers = (p_Upper(l$) = "[USERS]")
+            Continue
+        EndIf
+        If inUsers = False
+            Continue
+        EndIf
+        p = p_Find(l$, "=")
+        If p < 1
+            Continue
+        EndIf
+        v$ = p_Trim(p_Sub(l$, p + 1, StrLen(l$)))
+        c = p_FindLast(v$, ",")
+        If c < 0
+            Continue
+        EndIf
+        nm$ = p_Trim(p_Sub(v$, 0, c))
+        id$ = p_Trim(p_Sub(v$, c + 1, StrLen(v$)))
+        If id$ = ""
+            Continue
+        EndIf
+        i = p_FindUser(id$)
+        If i = -1
+            u = p_NewUser()
+            users[nusers] = u
+            users[nusers].id = id$
+            users[nusers].name = nm$
+            nusers = nusers + 1
+            added = added + 1
+        ElseIf users[i].name = ""
+            users[i].name = nm$
+        EndIf
+    Wend
+    CloseFile(1)
+    p_RefreshList()
+    Return(added)
+EndFunction
+
+; ---------------------------------------------------------------------------
+;  Writing the commented POP3.INI
+; ---------------------------------------------------------------------------
+Function p_W(s$)
+    WriteLine(1, s$)
+EndFunction
+
+Function p_WriteIni(path$)
+    Local i, ids$, ds$, a, k, d$
+    ids$ = ""
+    For i = 0 To nusers - 1
+        If i > 0
+            ids$ = ids$ .. ","
+        EndIf
+        ids$ = ids$ .. users[i].id
+    Next
+    a = moai.Get("oDate", "Active")
+    ds$ = "none"
+    If a = 1
+        ds$ = "mci"
+    EndIf
+    If a = 2
+        ds$ = "rfc"
+    EndIf
+
+    OpenFile(1, path$, #MODE_WRITE)
+    p_W("; POP3.INI  -  settings for the UMLMM gateway (sending and receiving)")
+    p_W("; Created by the POP3.INI Wizard.  You can edit this file by hand with")
+    p_W("; Notepad, or run the wizard again: it reads this file and writes it")
+    p_W("; back with fresh comments.  Lines starting with ; are comments.")
+    p_W("; Keep this file private: it contains the mailbox passwords in plain text.")
+    p_W("")
+    p_W("[SERVER]")
+    p_W("; SENDING: the SMTP server (normally port 25).")
+    p_W("SmtpHost=" .. p_Get("sSmtpHost"))
+    p_W("SmtpPort=" .. p_Get("sSmtpPort"))
+    p_W("; Name the gateway announces to the server (EHLO).  Use a full host")
+    p_W("; name if your server rejects 'localhost'.")
+    p_W("Hello=" .. p_Get("sHello"))
+    p_W("")
+    p_W("; RECEIVING: the POP3 server (normally port 110).")
+    p_W("Pop3Host=" .. p_Get("sPopHost"))
+    p_W("Pop3Port=" .. p_Get("sPopPort"))
+    p_W("")
+    p_W("; RECEIVING: the individual IDs (from the [USERS] list in MAILROOM.INI)")
+    p_W("; whose mailboxes are checked on every mail run, separated by commas.")
+    p_W("; Every ID listed here needs a [USER.<id>] section below.")
+    p_W("Users=" .. ids$)
+    p_W("")
+    p_W("; 1 = delete each message from the server after it has been downloaded")
+    p_W("; (normal).  With 0 the same mail is downloaded again on every run.")
+    p_W("Delete=" .. p_Bool(moai.Get("oDelete", "Selected")))
+    p_W("")
+    p_W("; 1 = also keep an untouched copy of every downloaded message as")
+    p_W("; <name>.EML in the MAILROOM folder (a safety net).")
+    p_W("KeepRaw=" .. p_Bool(moai.Get("oKeepRaw", "Selected")))
+    p_W("")
+    p_W("; Maximum number of messages downloaded per mail run (0 = no limit).")
+    p_W("; Whatever is left on the server is fetched on the next run.")
+    p_W("MaxPerRun=" .. p_Get("oMax"))
+    p_W("")
+    p_W("; 0 = oldest message first (normal).  1 = newest first.")
+    p_W("NewestFirst=" .. p_Bool(moai.Get("oNewest", "Selected")))
+    p_W("")
+    p_W("; 1 = show the other To: and Cc: recipients of incoming mail in Bob.")
+    p_W("; 0 = show only the Bob user.")
+    p_W("ShowRecipients=" .. p_Bool(moai.Get("oShowRcpt", "Selected")))
+    p_W("")
+    p_W("; How the Date: line of incoming mail is written for Bob.")
+    p_W(";   none = no Date line")
+    p_W(";   mci  = 'Wed Nov 04, 2026  03:20 am GMT'")
+    p_W(";   rfc  = the original Internet date, unchanged")
+    p_W("DateStyle=" .. ds$)
+    p_W("")
+    d$ = p_Get("oInDir")
+    p_W("; Only if the transport does not pass the IN folder itself:")
+    If d$ = ""
+        p_W(";InDir=C:" .. bs$ .. "MSBOB" .. bs$ .. "MAILROOM" .. bs$ .. "IN")
+    Else
+        p_W("InDir=" .. d$)
+    EndIf
+    For k = 0 To nSrvExtra - 1
+        If k = 0
+            p_W("")
+            p_W("; Other settings that were already in the file:")
+        EndIf
+        p_W(srvExtra[k])
+    Next
+
+    For i = 0 To nusers - 1
+        p_W("")
+        p_W("; ---- Bob user " .. users[i].id .. " ----")
+        p_W("[USER." .. users[i].id .. "]")
+        p_W("; Address used as the sender (MAIL FROM and the From: header).")
+        p_W("Email=" .. users[i].email)
+        p_W("; Login for the server (used for sending and for receiving).")
+        p_W("User=" .. users[i].user)
+        p_W("Password=" .. users[i].pass)
+        p_W("; The name Bob should show as the recipient of incoming mail.")
+        p_W("FullName=" .. users[i].name)
+        p_W("; Only if sending and receiving need different logins:")
+        If users[i].smtpUser <> ""
+            p_W("SmtpUser=" .. users[i].smtpUser)
+        Else
+            p_W(";SmtpUser=")
+        EndIf
+        If users[i].smtpPass <> ""
+            p_W("SmtpPassword=" .. users[i].smtpPass)
+        Else
+            p_W(";SmtpPassword=")
+        EndIf
+        If users[i].popUser <> ""
+            p_W("PopUser=" .. users[i].popUser)
+        Else
+            p_W(";PopUser=")
+        EndIf
+        If users[i].popPass <> ""
+            p_W("PopPassword=" .. users[i].popPass)
+        Else
+            p_W(";PopPassword=")
+        EndIf
+        For k = 0 To users[i].nExtra - 1
+            p_W(users[i].extra[k])
+        Next
+    Next
+    p_W("")
+    p_W("; To add another user: copy a [USER.<id>] block, change the ID and the")
+    p_W("; values, and add the ID to Users= above.")
+    CloseFile(1)
+EndFunction
+
+; ---------------------------------------------------------------------------
+;  Validation of each page
+; ---------------------------------------------------------------------------
+Function p_CheckServer()
+    If p_Get("sSmtpHost") = "" Or p_Get("sPopHost") = ""
+        p_Msg("Server", "Both server names must be filled in.")
+        Return(False)
+    EndIf
+    If p_IsDigits(p_Get("sSmtpPort")) = False Or p_IsDigits(p_Get("sPopPort")) = False
+        p_Msg("Server", "The ports must be numbers (usually 25 and 110).")
+        Return(False)
+    EndIf
+    If p_Get("sHello") = ""
+        p_Msg("Server", "The EHLO name may not be empty (use localhost if unsure).")
+        Return(False)
+    EndIf
+    Return(True)
+EndFunction
+
+Function p_CheckUsers()
+    ; a half-typed user in the form is added automatically
+    If p_Get("fId") <> "" Or p_Get("fEmail") <> ""
+        If p_SaveUserFromForm() = False
+            Return(False)
+        EndIf
+    EndIf
+    If nusers = 0
+        p_Msg("Users", "Add at least one user.")
+        Return(False)
+    EndIf
+    Return(True)
+EndFunction
+
+Function p_CheckOptions()
+    If p_IsDigits(p_Get("oMax")) = False
+        p_Msg("Options", "Messages per run must be a number (0 = no limit).")
+        Return(False)
+    EndIf
+    Return(True)
+EndFunction
+
+Function p_FillReview()
+    Local i, a, ds$
+    While revCount > 0
+        moai.DoMethod("revlist", "Remove", "Last")
+        revCount = revCount - 1
+    Wend
+    a = moai.Get("oDate", "Active")
+    ds$ = "none"
+    If a = 1
+        ds$ = "mci"
+    EndIf
+    If a = 2
+        ds$ = "rfc"
+    EndIf
+    p_Rev("Sending:  " .. p_Get("sSmtpHost") .. " port " .. p_Get("sSmtpPort") .. "  (EHLO " .. p_Get("sHello") .. ")")
+    p_Rev("Receiving:  " .. p_Get("sPopHost") .. " port " .. p_Get("sPopPort"))
+    p_Rev("Delete from server: " .. p_Bool(moai.Get("oDelete", "Selected")) .. "    Keep .EML copy: " .. p_Bool(moai.Get("oKeepRaw", "Selected")))
+    p_Rev("Max per run: " .. p_Get("oMax") .. "    Newest first: " .. p_Bool(moai.Get("oNewest", "Selected")))
+    p_Rev("Show recipients: " .. p_Bool(moai.Get("oShowRcpt", "Selected")) .. "    Date style: " .. ds$)
+    For i = 0 To nusers - 1
+        p_Rev("User " .. users[i].id .. ":  " .. users[i].name .. "  <" .. users[i].email .. ">  login " .. users[i].user)
+    Next
+EndFunction
+
+Function p_Rev(s$)
+    moai.DoMethod("revlist", "Insert", "Bottom", s$)
+    revCount = revCount + 1
+EndFunction
+
+; ---------------------------------------------------------------------------
+;  Saving (with backup)
+; ---------------------------------------------------------------------------
+Function p_DoSave()
+    Local path$, bak$, dir$, p, old$
+    path$ = p_Get("pathEntry")
+    If path$ = ""
+        p_Msg("Save", "The file name is empty (first page).")
+        Return
+    EndIf
+    p = p_FindLast(path$, bs$)
+    If p > 0
+        dir$ = p_Sub(path$, 0, p)
+        If IsDirectory(dir$) = False
+            p_Msg("Save", "The folder " .. dir$ .. " does not exist.  Choose another place on the first page.")
+            Return
+        EndIf
+    EndIf
+    If Exists(path$) <> 0
+        If moai.Request("Save", path$ .. " already exists.  A copy is kept as POP3.BAK.", "Overwrite|Cancel") = 0
+            Return
+        EndIf
+        If p_Upper(RightStr(path$, 4)) = ".INI"
+            bak$ = LeftStr(path$, StrLen(path$) - 4) .. ".BAK"
+        Else
+            bak$ = path$ .. ".BAK"
+        EndIf
+        old$ = FileToString(path$)
+        StringToFile(old$, bak$)
+    EndIf
+    p_WriteIni(path$)
+    p_Status("Saved " .. path$)
+    p_Msg("Done", "Saved " .. path$ .. "." .. Chr(10) .. Chr(10) .. "Copy it to the Bob MAILROOM folder on the Bob computer (next to MAILRUN.LOG) if it is not already there.")
+EndFunction
+
+; ---------------------------------------------------------------------------
+;  Page navigation
+; ---------------------------------------------------------------------------
+page = 0
+NPAGES = 5
+
+Function p_Titles(n)
+    If n = 0
+        Return("Step 1 of 5 - File")
+    EndIf
+    If n = 1
+        Return("Step 2 of 5 - Mail server")
+    EndIf
+    If n = 2
+        Return("Step 3 of 5 - Users")
+    EndIf
+    If n = 3
+        Return("Step 4 of 5 - Options")
+    EndIf
+    Return("Step 5 of 5 - Review and save")
+EndFunction
+
+Function p_ShowPage(n)
+    page = n
+    moai.Set("pages", "Active", n)
+    p_Put("title", p_Titles(n))
+    If n = 4
+        p_FillReview()
+    EndIf
+EndFunction
+
+Function p_Next()
+    Local path$
+    If page = 0
+        path$ = p_Get("pathEntry")
+        If path$ = ""
+            p_Msg("File", "Enter the location of POP3.INI.")
+            Return
+        EndIf
+        If loaded = False And Exists(path$) <> 0
+            If moai.Request("File", "A POP3.INI already exists there.  Load its settings so you can change them?", "Load it|Start fresh") <> 0
+                p_LoadIni(path$)
+            EndIf
+        EndIf
+        loaded = True
+    ElseIf page = 1
+        If p_CheckServer() = False
+            Return
+        EndIf
+    ElseIf page = 2
+        If p_CheckUsers() = False
+            Return
+        EndIf
+    ElseIf page = 3
+        If p_CheckOptions() = False
+            Return
+        EndIf
+    EndIf
+    If page < NPAGES - 1
+        p_ShowPage(page + 1)
+    EndIf
+EndFunction
+
+Function p_Back()
+    If page > 0
+        p_ShowPage(page - 1)
+    EndIf
+EndFunction
+
+; ---------------------------------------------------------------------------
+;  Event handler
+; ---------------------------------------------------------------------------
+Function p_Handle(msg)
+    Local id$, at$, i, f$, n, mr$
+    id$ = p_Lower(ToString(msg.ID))
+    at$ = p_Lower(ToString(msg.Attribute))
+
+    If DEBUG_EVENTS
+        p_Status("Event: id=" .. id$ .. "  attribute=" .. at$ .. "  class=" .. ToString(msg.Class))
+    EndIf
+
+    If id$ = "win"
+        ; the window only notifies on closerequest
+        quit = True
+        End
+    EndIf
+
+    If at$ = "active" And id$ = "ulist"
+        ; a user was selected in the list
+        i = moai.Get("ulist", "Active")
+        If i >= 0 And i < nusers
+            p_LoadForm(i)
+        EndIf
+        Return
+    EndIf
+
+    If at$ <> "pressed"
+        Return
+    EndIf
+    If CLICK_TRIGGER <> -1 And msg.TriggerValue <> CLICK_TRIGGER
+        Return
+    EndIf
+
+    If id$ = "bnext"
+        p_Next()
+    EndIf
+    If id$ = "bback"
+        p_Back()
+    EndIf
+    If id$ = "bquit"
+        quit = True
+        End
+    EndIf
+
+    If id$ = "bbrowse"
+        f$ = FileRequest("Choose POP3.INI", {Path = "C:" .. bs$ .. "MSBOB" .. bs$ .. "MAILROOM", File = "POP3.INI", Filters = "ini"})
+        If f$ <> ""
+            p_Put("pathEntry", f$)
+        EndIf
+    EndIf
+    If id$ = "bload"
+        f$ = p_Get("pathEntry")
+        If p_LoadIni(f$)
+            loaded = True
+            p_Status("Loaded " .. f$)
+            p_Msg("Load", "Settings loaded.  Use Next to review and change them.")
+        Else
+            p_Msg("Load", "That file does not exist.")
+        EndIf
+    EndIf
+
+    If id$ = "bsaveuser"
+        p_SaveUserFromForm()
+    EndIf
+    If id$ = "bnewuser"
+        p_ClearForm()
+    EndIf
+    If id$ = "bdeluser"
+        If editIndex >= 0
+            If moai.Request("Remove", "Remove user " .. users[editIndex].id .. "?", "Remove|Cancel") <> 0
+                p_RemoveUser(editIndex)
+            EndIf
+        Else
+            p_Msg("Remove", "Select a user in the list first.")
+        EndIf
+    EndIf
+    If id$ = "bimport"
+        f$ = FileRequest("Choose MAILROOM.INI", {Path = "C:" .. bs$ .. "MSBOB" .. bs$ .. "MAILROOM", File = "MAILROOM.INI", Filters = "ini"})
+        If f$ <> ""
+            n = p_ImportMailroom(f$)
+            If n < 0
+                p_Msg("Import", "That file does not exist.")
+            Else
+                p_Msg("Import", ToString(n) .. " user(s) added.  Select each one in the list and fill in the e-mail address, login and password.")
+            EndIf
+        EndIf
+    EndIf
+
+    If id$ = "bsave"
+        p_DoSave()
+    EndIf
+EndFunction
+
+; ---------------------------------------------------------------------------
+;  The window
+; ---------------------------------------------------------------------------
+xml$ = [[
+<application id="app">
+ <window id="win" title="POP3.INI Wizard for the UMLMM gateway" notify="closerequest">
+  <vgroup>
+   <text id="title">Step 1 of 5 - File</text>
+   <pageview id="pages" mode="none">
+
+    <vgroup>
+     <text>This wizard creates the POP3.INI file used by the Bob mail gateway.</text>
+     <text>Every setting is written with a comment, so the file is easy to edit later.</text>
+     <text>If a POP3.INI already exists, it can be loaded and changed.</text>
+     <text>Location of POP3.INI (normally in the Bob MAILROOM folder):</text>
+     <hgroup>
+      <textentry id="pathEntry"/>
+      <button id="bBrowse">Browse...</button>
+      <button id="bLoad">Load</button>
+     </hgroup>
+    </vgroup>
+
+    <vgroup>
+     <text>Outgoing (SMTP) and incoming (POP3) mail servers.</text>
+     <colgroup columns="2">
+      <label>SMTP server</label><textentry id="sSmtpHost"/>
+      <label>SMTP port</label><textentry id="sSmtpPort"/>
+      <label>EHLO name</label><textentry id="sHello"/>
+      <label>POP3 server</label><textentry id="sPopHost"/>
+      <label>POP3 port</label><textentry id="sPopPort"/>
+     </colgroup>
+     <text>Defaults: server msbob.org, ports 25 and 110.  The EHLO name can stay localhost.</text>
+    </vgroup>
+
+    <vgroup>
+     <text>One entry per Bob user.  The ID is the number after the name in the [USERS] list of MAILROOM.INI.</text>
+     <listview id="ulist" notify="active"><column title="Users"/></listview>
+     <colgroup columns="2">
+      <label>Bob user ID</label><textentry id="fId"/>
+      <label>Name shown in Bob</label><textentry id="fName"/>
+      <label>E-mail address</label><textentry id="fEmail"/>
+      <label>Server login</label><textentry id="fUser"/>
+      <label>Password</label><textentry id="fPass" password="1"/>
+      <label>Optional: SMTP login</label><textentry id="fSmtpUser"/>
+      <label>Optional: SMTP password</label><textentry id="fSmtpPass" password="1"/>
+      <label>Optional: POP3 login</label><textentry id="fPopUser"/>
+      <label>Optional: POP3 password</label><textentry id="fPopPass" password="1"/>
+     </colgroup>
+     <hgroup>
+      <button id="bSaveUser">Add / update user</button>
+      <button id="bNewUser">New</button>
+      <button id="bDelUser">Remove</button>
+      <button id="bImport">Import IDs from MAILROOM.INI...</button>
+     </hgroup>
+    </vgroup>
+
+    <vgroup>
+     <text>Options (the defaults are fine for normal use).</text>
+     <colgroup columns="2">
+      <label>Delete mail from server after download</label><checkbox id="oDelete"/>
+      <label>Keep a raw .EML copy of each message</label><checkbox id="oKeepRaw"/>
+      <label>Newest messages first</label><checkbox id="oNewest"/>
+      <label>Show other To/Cc recipients in Bob</label><checkbox id="oShowRcpt"/>
+      <label>Messages per mail run (0 = no limit)</label><textentry id="oMax"/>
+      <label>Date line style</label>
+      <choice id="oDate">
+       <item>none - no date line</item>
+       <item>mci - MCI Mail style</item>
+       <item>rfc - original Internet date</item>
+      </choice>
+      <label>IN folder (leave empty normally)</label><textentry id="oInDir"/>
+     </colgroup>
+    </vgroup>
+
+    <vgroup>
+     <text>Check the settings, then save.</text>
+     <listview id="revlist"><column title="Settings"/></listview>
+     <button id="bSave">Save POP3.INI</button>
+    </vgroup>
+
+   </pageview>
+   <text id="status"> </text>
+   <hgroup>
+    <button id="bBack">&lt; Back</button>
+    <button id="bNext">Next &gt;</button>
+    <button id="bQuit">Quit</button>
+   </hgroup>
+  </vgroup>
+ </window>
+</application>
+]]
+
+moai.CreateApp(xml$)
+p_Defaults()
+p_Put("pathEntry", DEFAULT_PATH$)
+p_ShowPage(0)
+
+InstallEventHandler({RapaGUI = p_Handle})
+
+Repeat
+    WaitEvent
+Until quit
+
+End
